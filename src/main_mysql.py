@@ -173,9 +173,12 @@ def main():
 
     user_id = 402
     start_time = time.time()
-    #execute_query_with_param(connection, query1, (user_id, user_id, user_id))
+    execute_query_with_param(connection, query1, (user_id, user_id, user_id))
     end_time = time.time()
-    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
+    print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
+
+    execute_query(connection, "SELECT * FROM Nutzer WHERE NutzerID = 402")
+
 
 
     #Anfrage 2 Anfrage mit mehrwertigem Attribut: Finden Sie alle Benutzer, die eine spezifische Fähigkeit besitzen (z.B. "Python").

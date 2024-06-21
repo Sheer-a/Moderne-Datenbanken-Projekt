@@ -3,16 +3,70 @@ import csv
 from pymongo import MongoClient
 import datetime
 import time
+from bson import ObjectId
+import json
+
+# Globale Dictionaries
+#Mapping von alten IDs (aus der CSV-Datei) zu neuen MongoDB ObjectIds
+id_mapping_adressen = {}
+id_mapping_nutzer = {}
+id_mapping_standort = {}
 
 client = MongoClient('mongodb://mongouser:mongopassword@localhost:27017/')
 db = client['meinedatenbank']
 file_path = "C:/Users/FHBBook/OneDrive - FH Dortmund/Informatik Studium/Semester 6/Moderne Datenbanken/Projekt/testdaten/dataset.txt"
 
+def objectid_to_str(data):
+    if isinstance(data, dict):
+        return {k: objectid_to_str(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [objectid_to_str(v) for v in data]
+    elif isinstance(data, ObjectId):
+        return str(data)
+    else:
+        return data
+
+def str_to_objectid(data):
+    if isinstance(data, dict):
+        return {k: str_to_objectid(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [str_to_objectid(v) for v in data]
+    elif isinstance(data, str):
+        try:
+            return ObjectId(data)
+        except:
+            return data
+    else:
+        return data
+
+def save_dictionaries():
+    data = {
+        'id_mapping_adressen': objectid_to_str(id_mapping_adressen),
+        'id_mapping_nutzer': objectid_to_str(id_mapping_nutzer),
+        'id_mapping_standort': objectid_to_str(id_mapping_standort)
+    }
+
+    with open('mappings.json', 'w') as json_file:
+        json.dump(data, json_file)
+
+def load_dictionaries():
+    global id_mapping_adressen, id_mapping_nutzer, id_mapping_standort
+
+    try:
+        with open('mappings.json', 'r') as json_file:
+            data = json.load(json_file)
+
+            id_mapping_adressen = str_to_objectid(data['id_mapping_adressen'])
+            id_mapping_nutzer = str_to_objectid(data['id_mapping_nutzer'])
+            id_mapping_standort = str_to_objectid(data['id_mapping_standort'])
+            print("Dictionaries geladen")
+    except FileNotFoundError:
+        print("Mappings.json Datei nicht gefunden. Die Dictionaries sind leer.")
+    except json.JSONDecodeError:
+        print("Fehler beim Dekodieren der JSON-Datei. Die Dictionaries sind leer.")
+
 def load_data():
-    #Mapping von alten IDs (aus der CSV-Datei) zu neuen MongoDB ObjectIds
-    id_mapping_adressen = {}
-    id_mapping_nutzer = {}
-    id_mapping_standort = {}
+
     current_adress_id = 1  # Starte mit der ID 1 und inkrementiere für jede Adresse
     current_nutzer_id = 1  # Starte mit der ID 1 und inkrementiere für jeden Nutzer
     current_standort_id = 1 # Starte mit der ID 1 und inkrementiere für jeden Standort
@@ -105,12 +159,142 @@ def load_data():
                     {"NutzerID": id_mapping_nutzer[int(row[4])]},
                     {"$push": {"Stellenangebote": stellenangebot}}
                 )
+            elif row[0] == 'NutzerBeziehungen':
+                nutzerbeziehung = {
+                    "NutzerID1": id_mapping_nutzer[int(row[1])],  # Verknüpfung mit Nutzer-ID1
+                    "NutzerID2": id_mapping_nutzer[int(row[2])],  # Verknüpfung mit Nutzer-ID2
+                    "Beziehungsart": row[3]  # Art der Beziehung
+                }
+                db.nutzerbeziehungen.insert_one(nutzerbeziehung)
+        # Speichern der Dictionaries in einer JSON-Datei
+        save_dictionaries()
+
 
 
 def clear_data():
     client.drop_database('meinedatenbank')
     print("Datenbank wurde gelöscht.")
 
+#Es gibt zwei Methoden execute_query1
+#Die erste wird für performance vergleich genutzt und gibt die tatsächlichen Objektreferenzen der Kontakte zweiten Grades
+# Die zweite ist für Demonstrationszwecke und gibt die reverse_gemappte ID aus
+
+def execute_query1(nutzer_object_id):
+    pipeline = [
+        # Finde alle direkten Kontakte des Nutzers
+        {
+            "$match": {"NutzerID1": nutzer_object_id}
+        },
+        # Verbinde die Beziehungen, um die Kontakte zweiten Grades zu finden
+        {
+            "$lookup": {
+                "from": "nutzerbeziehungen",
+                "localField": "NutzerID2",
+                "foreignField": "NutzerID1",
+                "as": "second_degree_contacts"
+            }
+        },
+        {
+            "$unwind": "$second_degree_contacts"
+        },
+        # Schließe direkte Kontakte und den Nutzer selbst aus
+        {
+            "$match": {
+                "second_degree_contacts.NutzerID2": {"$ne": nutzer_object_id}
+            }
+        },
+        # Überprüfe, ob es eine direkte Rückverbindung zum ursprünglichen Nutzer gibt
+        {
+            "$lookup": {
+                "from": "nutzerbeziehungen",
+                "localField": "second_degree_contacts.NutzerID2",
+                "foreignField": "NutzerID2",
+                "as": "check_back_reference"
+            }
+        },
+        {
+            "$match": {
+                "check_back_reference.NutzerID1": {"$ne": nutzer_object_id}
+            }
+        },
+        # Projiziere die Kontakte zweiten Grades
+        {
+            "$project": {
+                "_id": 0,
+                "KontaktZweitenGrades": "$second_degree_contacts.NutzerID2"
+            }
+        },
+        # Gruppiere die Ergebnisse, um Duplikate zu entfernen
+        {
+            "$group": {
+                "_id": "$KontaktZweitenGrades"
+            }
+        }
+    ]
+
+    results = list(db.nutzerbeziehungen.aggregate(pipeline))
+    for result in results:
+        print(result)
+
+def demo_execute_query1(nutzer_object_id):
+    pipeline = [
+        # Finde alle direkten Kontakte des Nutzers
+        {
+            "$match": {"NutzerID1": nutzer_object_id}
+        },
+        # Verbinde die Beziehungen, um die Kontakte zweiten Grades zu finden
+        {
+            "$lookup": {
+                "from": "nutzerbeziehungen",
+                "localField": "NutzerID2",
+                "foreignField": "NutzerID1",
+                "as": "second_degree_contacts"
+            }
+        },
+        {
+            "$unwind": "$second_degree_contacts"
+        },
+        # Schließe direkte Kontakte und den Nutzer selbst aus
+        {
+            "$match": {
+                "second_degree_contacts.NutzerID2": {"$ne": nutzer_object_id}
+            }
+        },
+        # Überprüfe, ob es eine direkte Rückverbindung zum ursprünglichen Nutzer gibt
+        {
+            "$lookup": {
+                "from": "nutzerbeziehungen",
+                "localField": "second_degree_contacts.NutzerID2",
+                "foreignField": "NutzerID2",
+                "as": "check_back_reference"
+            }
+        },
+        {
+            "$match": {
+                "check_back_reference.NutzerID1": {"$ne": nutzer_object_id}
+            }
+        },
+        # Projiziere die Kontakte zweiten Grades
+        {
+            "$project": {
+                "_id": 0,
+                "KontaktZweitenGrades": "$second_degree_contacts.NutzerID2"
+            }
+        },
+        # Gruppiere die Ergebnisse, um Duplikate zu entfernen
+        {
+            "$group": {
+                "_id": "$KontaktZweitenGrades"
+            }
+        }
+    ]
+
+    results = list(db.nutzerbeziehungen.aggregate(pipeline))
+    id_mapping_nutzer_reverse = {v: k for k, v in id_mapping_nutzer.items()}  # Umgekehrtes Mapping-Dictionary
+
+    for result in results:
+        original_id = id_mapping_nutzer_reverse.get(result['_id'], "ID nicht gefunden")
+        print(f"Kontakt zweiten Grades: {original_id}")
 
 def execute_query2(gesuchte_kenntnis):
     # Aggregationspipeline
@@ -178,24 +362,98 @@ def execute_query3(unternehmensname):
         print("Keine Stellenangebote gefunden oder Unternehmen existiert nicht.")
 
 
+def get_user_info(nutzer_object_id):
+    if isinstance(nutzer_object_id, str):
+        nutzer_object_id = ObjectId(nutzer_object_id)
 
+    user_info = db.nutzer.find_one({"_id": nutzer_object_id})
+    if user_info:
+        print("Nutzerinformationen:", user_info)
+    else:
+        print("Nutzer nicht gefunden")
+
+
+
+def get_direct_relationships(nutzer_object_id):
+
+    pipeline = [
+        # Finde alle direkten Beziehungen des Nutzers
+        {
+            "$match": {"NutzerID1": nutzer_object_id}
+        },
+        # Verbinde die Beziehungen mit den Nutzern
+        {
+            "$lookup": {
+                "from": "nutzer",
+                "localField": "NutzerID2",
+                "foreignField": "_id",
+                "as": "direct_contacts"
+            }
+        },
+        {
+            "$unwind": "$direct_contacts"
+        },
+        # Projiziere die Nutzerdaten
+        {
+            "$project": {
+                "_id": 0,
+                "NutzerID1": 1,
+                "NutzerID2": 1,
+                "Beziehungsart": 1,
+                "DirectContact": "$direct_contacts"
+            }
+        }
+    ]
+
+    results = list(db.nutzerbeziehungen.aggregate(pipeline))
+    if results:
+        for result in results:
+            print("Direkter Kontakt:", result["DirectContact"])
+    else:
+        print("Keine direkten Kontakte gefunden")
+
+    results = list(db.nutzerbeziehungen.aggregate(pipeline))
+    for result in results:
+        print("Direkter Kontakt:", result["DirectContact"])
+
+def check_nutzerbeziehungen():
+    relationships = db.nutzerbeziehungen.find()
+    for relationship in relationships:
+        print(relationship)
 
 def main():
+
+
+
     #load_data()
     #clear_data()
 
+    # Laden der Dictionaries aus der JSON-Datei
+    load_dictionaries()
 
 
 
+    nutzer_object_id = id_mapping_nutzer['402']  # Die ObjectId des Nutzers
+    #get_user_info(nutzer_object_id)
+    #get_direct_relationships(nutzer_object_id)
+    #check_nutzerbeziehungen()
     start_time = time.time()
-    execute_query2("word")
+    execute_query1(nutzer_object_id)
     end_time = time.time()
     print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
 
+
+    demo_execute_query1(nutzer_object_id)
+
     start_time = time.time()
-    execute_query3("Solomon-Beck")
+    #execute_query2("word")
     end_time = time.time()
-    print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
+    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
+
+    start_time = time.time()
+    #execute_query3("Solomon-Beck")
+    end_time = time.time()
+    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
 
 
 if __name__ == '__main__':

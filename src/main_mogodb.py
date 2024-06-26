@@ -5,6 +5,10 @@ import datetime
 import time
 from bson import ObjectId
 import json
+import os
+from pymongo import MongoClient, errors
+from pprint import pprint
+
 
 # Globale Dictionaries
 #Mapping von alten IDs (aus der CSV-Datei) zu neuen MongoDB ObjectIds
@@ -14,7 +18,9 @@ id_mapping_standort = {}
 
 client = MongoClient('mongodb://mongouser:mongopassword@localhost:27017/')
 db = client['meinedatenbank']
-file_path = "C:/Users/FHBBook/OneDrive - FH Dortmund/Informatik Studium/Semester 6/Moderne Datenbanken/Projekt/testdaten/dataset.txt"
+file_path = "C:/Users/FHBBook/OneDrive - FH Dortmund/Informatik Studium/Semester 6/Moderne Datenbanken/Projekt/testdaten/"
+data_files = [os.path.join(file_path, f) for f in os.listdir(file_path) if f.startswith("dataset_block")]
+
 
 def objectid_to_str(data):
     if isinstance(data, dict):
@@ -65,7 +71,7 @@ def load_dictionaries():
     except json.JSONDecodeError:
         print("Fehler beim Dekodieren der JSON-Datei. Die Dictionaries sind leer.")
 
-def load_data():
+def load_data(file_path):
 
     current_adress_id = 1  # Starte mit der ID 1 und inkrementiere für jede Adresse
     current_nutzer_id = 1  # Starte mit der ID 1 und inkrementiere für jeden Nutzer
@@ -175,68 +181,33 @@ def clear_data():
     client.drop_database('meinedatenbank')
     print("Datenbank wurde gelöscht.")
 
+
+def get_execution_time(db, collection_name, pipeline):
+    db.nutzerbeziehungen.aggregate(pipeline)
+    try:
+        # Startzeit erfassen
+        start_time = time.time()
+        cursor = db[collection_name].aggregate(pipeline)
+
+        # Cursor vollständig durchlaufen, um sicherzustellen, dass die Aggregation abgeschlossen ist
+        for _ in cursor:
+            pass
+
+        # Endzeit erfassen
+        end_time = time.time()
+
+        # Ausführungszeit berechnen
+        execution_time = end_time - start_time
+
+        return execution_time
+    except Exception as e:
+        raise Exception(f"Error executing the aggregation: {e}")
+
 #Es gibt zwei Methoden execute_query1
 #Die erste wird für performance vergleich genutzt und gibt die tatsächlichen Objektreferenzen der Kontakte zweiten Grades
 # Die zweite ist für Demonstrationszwecke und gibt die reverse_gemappte ID aus
 
 def execute_query1(nutzer_object_id):
-    pipeline = [
-        # Finde alle direkten Kontakte des Nutzers
-        {
-            "$match": {"NutzerID1": nutzer_object_id}
-        },
-        # Verbinde die Beziehungen, um die Kontakte zweiten Grades zu finden
-        {
-            "$lookup": {
-                "from": "nutzerbeziehungen",
-                "localField": "NutzerID2",
-                "foreignField": "NutzerID1",
-                "as": "second_degree_contacts"
-            }
-        },
-        {
-            "$unwind": "$second_degree_contacts"
-        },
-        # Schließe direkte Kontakte und den Nutzer selbst aus
-        {
-            "$match": {
-                "second_degree_contacts.NutzerID2": {"$ne": nutzer_object_id}
-            }
-        },
-        # Überprüfe, ob es eine direkte Rückverbindung zum ursprünglichen Nutzer gibt
-        {
-            "$lookup": {
-                "from": "nutzerbeziehungen",
-                "localField": "second_degree_contacts.NutzerID2",
-                "foreignField": "NutzerID2",
-                "as": "check_back_reference"
-            }
-        },
-        {
-            "$match": {
-                "check_back_reference.NutzerID1": {"$ne": nutzer_object_id}
-            }
-        },
-        # Projiziere die Kontakte zweiten Grades
-        {
-            "$project": {
-                "_id": 0,
-                "KontaktZweitenGrades": "$second_degree_contacts.NutzerID2"
-            }
-        },
-        # Gruppiere die Ergebnisse, um Duplikate zu entfernen
-        {
-            "$group": {
-                "_id": "$KontaktZweitenGrades"
-            }
-        }
-    ]
-
-    results = list(db.nutzerbeziehungen.aggregate(pipeline))
-    for result in results:
-        print(result)
-
-def demo_execute_query1(nutzer_object_id):
     pipeline = [
         # Finde alle direkten Kontakte des Nutzers
         {
@@ -296,6 +267,10 @@ def demo_execute_query1(nutzer_object_id):
         original_id = id_mapping_nutzer_reverse.get(result['_id'], "ID nicht gefunden")
         print(f"Kontakt zweiten Grades: {original_id}")
 
+    execution_time_ms = get_execution_time(db, "nutzerbeziehungen", pipeline)
+    return execution_time_ms
+
+
 def execute_query2(gesuchte_kenntnis):
     # Aggregationspipeline
     pipeline = [
@@ -326,6 +301,10 @@ def execute_query2(gesuchte_kenntnis):
     # Ergebnisse ausgeben
     for result in results:
         print(result)
+
+    execution_time_ms = get_execution_time(db, "personen", pipeline)
+    return execution_time_ms
+
 
 
 
@@ -360,6 +339,9 @@ def execute_query3(unternehmensname):
             print(f"Unternehmen: {result['_id']}, Anzahl der offenen Stellenangebote: {result['Anzahl_der_Stellenangebote']}")
     else:
         print("Keine Stellenangebote gefunden oder Unternehmen existiert nicht.")
+
+    execution_time_ms = get_execution_time(db, "personen", pipeline)
+    return execution_time_ms
 
 
 def get_user_info(nutzer_object_id):
@@ -423,28 +405,64 @@ def check_nutzerbeziehungen():
 
 def main():
 
-
-
-    #load_data()
-    #clear_data()
-
-    # Laden der Dictionaries aus der JSON-Datei
-    load_dictionaries()
+    # Statische Variablen für Unternehmensnamen und Kenntnisse
+    unternehmensname = "Tech Solutions"
+    kenntnis = "TopTeamfähigkeit"
+    nutzer_object_id = 0
 
 
 
-    nutzer_object_id = id_mapping_nutzer['402']  # Die ObjectId des Nutzers
+    try:
+        for index, file_path in enumerate(data_files):
+            print(f"Processing file: {file_path}")
+
+            # Schritt 1: Alle Tabellen droppen
+            clear_data()
+
+            # Schritt 2: Daten einspielen
+            load_data(file_path)
+
+            # Schritt 3: Laden der Dictionaries aus der JSON-Datei
+            load_dictionaries()
+            nutzer_object_id = id_mapping_nutzer['1']  # Die ObjectId des Nutzers
+            # Schritt 4: Anfragen ausführen und Zeit messen
+
+            print("Executing query 1...")
+            query1_time = execute_query1(nutzer_object_id)
+
+
+            print("Executing query 2...")
+
+            query2_time = execute_query2(kenntnis)
+
+
+            print("Executing query 3...")
+            query3_time = execute_query3(unternehmensname)
+
+            print(f"Results for {file_path}:")
+            print(f"Query 1 time: {query1_time:f} seconds")
+            print(f"Query 2 time: {query2_time:f} seconds")
+            print(f"Query 3 time: {query3_time:f} seconds")
+
+    except errors.PyMongoError as e:
+        print(f"Error: {e}")
+    finally:
+        client.close()
+        print("MongoDB connection is closed")
+
+
+
+
+
+
+
     #get_user_info(nutzer_object_id)
     #get_direct_relationships(nutzer_object_id)
     #check_nutzerbeziehungen()
-    start_time = time.time()
-    execute_query1(nutzer_object_id)
-    end_time = time.time()
-    print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
-
-
-    demo_execute_query1(nutzer_object_id)
-
+    #start_time = time.time()
+    #execute_query1(nutzer_object_id)
+    #end_time = time.time()
+    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
     start_time = time.time()
     #execute_query2("word")
     end_time = time.time()

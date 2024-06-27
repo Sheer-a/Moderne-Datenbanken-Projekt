@@ -24,7 +24,7 @@ def generate_data_block(block_num, base_num_records):
     person_ids = [id for id in range(1 + static_users, num_records + 1+static_users) if id not in company_ids]
     user_id = static_users
 
-    output_file_path = os.path.join(output_dir, f"dataset_block_{block_num}.txt")
+    output_file_path = os.path.join(output_dir, f"dataset_block_{block_num:02d}.txt")
 
 
 
@@ -242,5 +242,5 @@ def generate_data_block(block_num, base_num_records):
 
 # Beispiel: Erzeuge Blöcke mit zunehmender Anzahl von Datensätzen
 base_num_records = 6732 // 6  # Anzahl der Datensätze in einem Block
-for block_num in range(1, 6):  # Erzeuge 5 Blöcke
+for block_num in range(1, 11):  # Erzeuge 5 Blöcke
     generate_data_block(block_num, base_num_records)

@@ -260,12 +260,12 @@ def execute_query1(nutzer_object_id):
         }
     ]
 
-    results = list(db.nutzerbeziehungen.aggregate(pipeline))
-    id_mapping_nutzer_reverse = {v: k for k, v in id_mapping_nutzer.items()}  # Umgekehrtes Mapping-Dictionary
+    #results = list(db.nutzerbeziehungen.aggregate(pipeline))
+    #id_mapping_nutzer_reverse = {v: k for k, v in id_mapping_nutzer.items()}  # Umgekehrtes Mapping-Dictionary
 
-    for result in results:
-        original_id = id_mapping_nutzer_reverse.get(result['_id'], "ID nicht gefunden")
-        print(f"Kontakt zweiten Grades: {original_id}")
+    #for result in results:
+       # original_id = id_mapping_nutzer_reverse.get(result['_id'], "ID nicht gefunden")
+       # print(f"Kontakt zweiten Grades: {original_id}")
 
     execution_time_ms = get_execution_time(db, "nutzerbeziehungen", pipeline)
     return execution_time_ms
@@ -296,11 +296,11 @@ def execute_query2(gesuchte_kenntnis):
     ]
 
     # Ausführen der Pipeline
-    results = list(db.personen.aggregate(pipeline))
+    #results = list(db.personen.aggregate(pipeline))
 
     # Ergebnisse ausgeben
-    for result in results:
-        print(result)
+    #for result in results:
+        #print(result)
 
     execution_time_ms = get_execution_time(db, "personen", pipeline)
     return execution_time_ms
@@ -331,14 +331,14 @@ def execute_query3(unternehmensname):
     ]
 
     # Ausführen der Pipeline
-    results = list(db.unternehmen.aggregate(pipeline))
+    #results = list(db.unternehmen.aggregate(pipeline))
 
     # Ergebnisse ausgeben
-    if results:
-        for result in results:
-            print(f"Unternehmen: {result['_id']}, Anzahl der offenen Stellenangebote: {result['Anzahl_der_Stellenangebote']}")
-    else:
-        print("Keine Stellenangebote gefunden oder Unternehmen existiert nicht.")
+    #if results:
+        #for result in results:
+           # print(f"Unternehmen: {result['_id']}, Anzahl der offenen Stellenangebote: {result['Anzahl_der_Stellenangebote']}")
+    #else:
+        #print("Keine Stellenangebote gefunden oder Unternehmen existiert nicht.")
 
     execution_time_ms = get_execution_time(db, "personen", pipeline)
     return execution_time_ms
@@ -409,6 +409,10 @@ def main():
     unternehmensname = "Tech Solutions"
     kenntnis = "TopTeamfähigkeit"
     nutzer_object_id = 0
+    arrayQuery1 = [0] * 10
+    arrayQuery2 = [0] * 10
+    arrayQuery3 = [0] * 10
+
 
 
 
@@ -427,51 +431,48 @@ def main():
             nutzer_object_id = id_mapping_nutzer['1']  # Die ObjectId des Nutzers
             # Schritt 4: Anfragen ausführen und Zeit messen
 
-            print("Executing query 1...")
-            query1_time = execute_query1(nutzer_object_id)
+            for i in range(10):
+                arrayQuery1[i] = execute_query1(nutzer_object_id)
 
 
-            print("Executing query 2...")
+            for i in range(10):
+                arrayQuery2[i] = execute_query2(kenntnis)
 
-            query2_time = execute_query2(kenntnis)
 
 
-            print("Executing query 3...")
-            query3_time = execute_query3(unternehmensname)
+            for i in range(10):
+                arrayQuery3[i] = execute_query3(unternehmensname)
 
-            print(f"Results for {file_path}:")
-            print(f"Query 1 time: {query1_time:f} seconds")
-            print(f"Query 2 time: {query2_time:f} seconds")
-            print(f"Query 3 time: {query3_time:f} seconds")
+            # Durchschnittszeiten berechnen
+            avg_time_query1 = sum(arrayQuery1) / len(arrayQuery1)
+            avg_time_query2 = sum(arrayQuery2) / len(arrayQuery2)
+            avg_time_query3 = sum(arrayQuery3) / len(arrayQuery3)
+
+            # Ergebnisse in eine Datei schreiben
+            output_filename = f'mongodb_query_execution_times_{index}.txt'
+            with open(output_filename, 'w') as file:
+                file.write('Query1 Ausführungszeiten:\n')
+                for time in arrayQuery1:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query1: {avg_time_query1}\n\n')
+
+                file.write('Query2 Ausführungszeiten:\n')
+                for time in arrayQuery2:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query2: {avg_time_query2}\n\n')
+
+                file.write('Query3 Ausführungszeiten:\n')
+                for time in arrayQuery3:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query3: {avg_time_query3}\n\n')
+
+            print(f"Results written to {output_filename}")
 
     except errors.PyMongoError as e:
         print(f"Error: {e}")
     finally:
         client.close()
         print("MongoDB connection is closed")
-
-
-
-
-
-
-
-    #get_user_info(nutzer_object_id)
-    #get_direct_relationships(nutzer_object_id)
-    #check_nutzerbeziehungen()
-    #start_time = time.time()
-    #execute_query1(nutzer_object_id)
-    #end_time = time.time()
-    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
-    start_time = time.time()
-    #execute_query2("word")
-    end_time = time.time()
-    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
-
-    start_time = time.time()
-    #execute_query3("Solomon-Beck")
-    end_time = time.time()
-    #print(f"Query Execution Time: {end_time - start_time:.4f} seconds")
 
 
 if __name__ == '__main__':

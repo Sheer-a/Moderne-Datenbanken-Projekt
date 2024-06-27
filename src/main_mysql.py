@@ -118,6 +118,9 @@ def main():
     unternehmensname = "Tech Solutions"
     kenntnis = "TopTeamfähigkeit"
     user_id = 1
+    arrayQuery1 = [0] * 10
+    arrayQuery2 = [0] * 10
+    arrayQuery3 = [0] * 10
 
     try:
         for index, data_path in enumerate(data_files):
@@ -131,22 +134,41 @@ def main():
 
             # Schritt 3: Daten einspielen
             insert_data_from_file(connection, data_path)
-
             # Schritt 4: Anfragen ausführen und Zeit messen
+            for i in range(10):
+                arrayQuery1[i] = execute_query_with_param(connection, query1, (user_id, user_id, user_id))
 
-            print("Executing query 1...")
-            query1_time = execute_query_with_param(connection, query1, (user_id, user_id, user_id))
 
             print("Executing query 2...")
-            query2_time = execute_query_with_param(connection, query2, (kenntnis,))
+            for i in range(10):
+                arrayQuery2[i] = execute_query_with_param(connection, query2, (kenntnis,))
 
             print("Executing query 3...")
-            query3_time = execute_query_with_param(connection, query3, (unternehmensname,))
+            for i in range(10):
+                arrayQuery3[i] = execute_query_with_param(connection, query3, (unternehmensname,))
 
-            print(f"Results for {data_path}:")
-            print(f"Query 1 time: {query1_time:.4f} seconds")
-            print(f"Query 2 time: {query2_time:.4f} seconds")
-            print(f"Query 3 time: {query3_time:.4f} seconds")
+            # Durchschnittszeiten berechnen
+            avg_time_query1 = sum(arrayQuery1) / len(arrayQuery1)
+            avg_time_query2 = sum(arrayQuery2) / len(arrayQuery2)
+            avg_time_query3 = sum(arrayQuery3) / len(arrayQuery3)
+
+            # Ergebnisse in eine Datei schreiben
+            with open(f'mysql_query_execution_times_{index}.txt', 'w') as file:
+                file.write('Query1 Ausführungszeiten:\n')
+                for time in arrayQuery1:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query1: {avg_time_query1}\n\n')
+
+                file.write('Query2 Ausführungszeiten:\n')
+                for time in arrayQuery2:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query2: {avg_time_query2}\n\n')
+
+                file.write('Query3 Ausführungszeiten:\n')
+                for time in arrayQuery3:
+                    file.write(f'{time}\n')
+                file.write(f'Durchschnittszeit Query3: {avg_time_query3}\n\n')
+
 
     except mysql.connector.Error as e:
         print(f"Error: {e}")
